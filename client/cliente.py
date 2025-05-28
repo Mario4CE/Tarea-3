@@ -10,25 +10,31 @@ BASE_DIR = Path(__file__).parent
 
 def send_command(action: str, user: str = None, password: str = None, amount: str = None) -> dict:
     try:
-        # Configurar contexto TLS
+        # Configuración TLS con autenticación mutua
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.load_verify_locations(CA_CERT)
+        context.load_verify_locations(BASE_DIR.parent / "ca" / "ca-cert.pem")
         context.verify_mode = ssl.CERT_REQUIRED
-        context.load_cert_chain(certfile=CLIENT_CERT, keyfile=CLIENT_KEY)
-
-        # Deshabilitar protocolos inseguros
+        
+        # Cargar certificado del cliente
+        context.load_cert_chain(
+            certfile=BASE_DIR / "client-cert.pem",
+            keyfile=BASE_DIR / "client-key.key"
+        )
+        
+        # Configuración de seguridad
         context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            with context.wrap_socket(sock, server_hostname=HOST) as secure_sock:
+            # Conexión segura con verificación de hostname
+            with context.wrap_socket(sock, server_hostname="banco.local") as secure_sock:
                 secure_sock.connect((HOST, PORT))
-
-                # Mostrar información del certificado del servidor
+                
+                # Mostrar información del servidor
                 server_cert = secure_sock.getpeercert()
                 cn = next(v for (k, v) in server_cert['subject'][0] if k == 'commonName')
-                print(f"Conectado a: {cn} (válido hasta: {server_cert['notAfter']})")
-
-                # Armar el comando
+                print(f"🔗 Conectado a: {cn} (válido hasta: {server_cert['notAfter']})")
+                
+                # Enviar comando
                 command = {
                     "action": action,
                     "user": user,
@@ -48,7 +54,8 @@ def send_command(action: str, user: str = None, password: str = None, amount: st
     except Exception as e:
         return {"status": "error", "message": f"Error de conexión: {str(e)}"}
 
-# Interfaz interactiva
+
+# Interfaz de usuario interactiva
 def interactive_client():
     print("Cliente Bancario Seguro (TLS 1.2+)")
     print("-----------------------------------")
@@ -57,45 +64,57 @@ def interactive_client():
     while True:
         print("\nOpciones:")
         print("1. Consultar saldo")
-        print("2. Realizar depósito")
+        print("2. Realizar deposito")
         print("3. Realizar retiro")
         print("4. Salir")
-
-        choice = input("Seleccione (1-4): ").strip()
-
-        if choice not in {"1", "2", "3", "4"}:
-            print("Opción no válida.")
-            continue
-
-        if choice == "4":
-            print("\nSesión finalizada.")
-            break
-
-        user = input("Usuario: ").strip()
-        password = input("Contraseña: ").strip()
-
-        if not user or not password:
-            print("Usuario y contraseña son requeridos.")
-            continue
-
-        if choice in {"2", "3"}:
-            amount = input("Monto: ").strip()
-            if not amount.replace('.', '', 1).isdigit():
-                print("⚠️ Monto inválido.")
-                continue
-
-            action = "deposit" if choice == "2" else "withdraw"
-            response = send_command(action, user, password, amount)
-        else:
+        
+        choice = input("Seleccione (1/4): ").strip()
+        
+        if choice == "1":
+            user = input("Usuario: ").strip()
+            password = input("Contraseña: ").strip()
+            
+            print("\nAutenticando...")
             response = send_command("get_balance", user, password)
-
-        if response["status"] == "success":
-            if "balance" in response:
-                print(f"\nOperación exitosa. Saldo: {response['balance']} {response.get('currency', '')}")
+            
+            if response["status"] == "success":
+                print(f"\nSaldo disponible: {response['balance']} {response['currency']}")
             else:
-                print("\nOperación completada.")
+                print(f"\nError: {response['message']}")
+
+        elif choice == "2":
+            user = input("Usuario: ").strip()
+            password = input("Contraseña: ").strip()
+            amount = input("Monto a depositar: ").strip()
+            
+            print("\nProcesando depósito...")
+            response = send_command("deposit", user, password, amount)
+            
+            if response["status"] == "success":
+                print(f"\nDepósito exitoso. Nuevo saldo: {response['balance']} {response['currency']}")
+            else:
+                print(f"\nError: {response['message']}")
+
+        elif choice == "3":
+            user = input("Usuario: ").strip()
+            password = input("Contraseña: ").strip()
+            amount = input("Monto a retirar: ").strip()
+            
+            print("\nProcesando retiro...")
+            response = send_command("withdraw", user, password, amount)
+            
+            if response["status"] == "success":
+                print(f"\nRetiro exitoso. Nuevo saldo: {response['balance']} {response['currency']}")
+            else:
+                print(f"\nError: {response['message']}")
+            
+                
+        elif choice == "4":
+            print("\nSesión finalizada")
+            break
+            
         else:
-            print(f"\nError: {response['message']}")
+            print("\nOpción no válida")
 
 if __name__ == "__main__":
     interactive_client()

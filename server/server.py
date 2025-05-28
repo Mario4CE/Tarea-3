@@ -12,28 +12,59 @@ BASE_DIR = Path(__file__).parent
 accounts = {
     "user1": {"balance": 1500.0, "password": "clave123"},
     "user2": {"balance": 300.5, "password": "abc456"},
+    "user3": {"balance": 0.0, "password": "pass789"},
+    "user4 ": {"balance": 10000.0, "password": "securepass"},
+    "user5": {"balance": 250.75, "password": "mypassword"},
 }
 
 def handle_request(data: str) -> dict:
     try:
         cmd = json.loads(data)
-        if cmd["action"] == "get_balance":
-            user = cmd["user"]
-            password = cmd.get("password", "")
-            
-            if user not in accounts:
-                return {"status": "error", "message": "Usuario no existe"}
-                
-            if accounts[user]["password"] != password:
-                return {"status": "error", "message": "Contraseña incorrecta"}
-                
+        action = cmd.get("action")
+        user = cmd.get("user")
+        password = cmd.get("password")
+
+        if not all([user, password, action]):
+            return {"status": "error", "message": "Faltan datos obligatorios"}
+
+        if user not in accounts:
+            return {"status": "error", "message": "Usuario no existe"}
+
+        if accounts[user]["password"] != password:
+            return {"status": "error", "message": "Contraseña incorrecta"}
+
+        if action == "get_balance":
             return {
                 "status": "success",
                 "balance": accounts[user]["balance"],
                 "currency": "USD"
             }
-            
-        return {"status": "error", "message": "Acción no válida"}
+
+        elif action in {"deposit", "withdraw"}:
+            try:
+                amount = float(cmd.get("amount", 0))
+                if amount <= 0.0:
+                    return {"status": "error", "message": "El monto debe ser mayor que cero"}
+            except (ValueError, TypeError):
+                return {"status": "error", "message": "Monto inválido"}
+
+            if action == "withdraw" and accounts[user]["balance"] < amount:
+                return {"status": "error", "message": "Fondos insuficientes"}
+
+            if action == "withdraw":
+                accounts[user]["balance"] -= amount
+            else:
+                accounts[user]["balance"] += amount
+
+            return {
+                "status": "success",
+                "balance": accounts[user]["balance"],
+                "currency": "USD"
+            }
+
+        else:
+            return {"status": "error", "message": "Acción no válida"}
+
     except json.JSONDecodeError:
         return {"status": "error", "message": "Formato JSON inválido"}
     except Exception as e:
